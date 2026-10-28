@@ -1,0 +1,8 @@
+numpy
+pandas
+matplotlib
+scipy
+Pillow
+pytest
+python-docx
+lifelines
