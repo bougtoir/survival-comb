@@ -23,7 +23,7 @@ def fig1_schematic():
     rng = np.random.default_rng(42)
     groups = simulate(rng, n=40, censor_rate=0.3)
     render_survival_comb(groups, os.path.join(FIG, "FIGURE_1_comb.png"),
-                         dpi=200, title="Survival Comb (schematic)")
+                         dpi=300, title="Survival Comb (schematic)")
 
 
 def fig2_comparators():
@@ -32,7 +32,7 @@ def fig2_comparators():
     for kind, name in [("km", "a_km"), ("km_censor", "b_censor"),
                        ("km_risktable", "c_risktable"), ("comb", "d_comb")]:
         render_comparator(groups, os.path.join(FIG, f"FIGURE_2_{name}.png"),
-                          kind, dpi=200)
+                          kind, dpi=300)
 
 
 def fig3_simulation_heatmap():
@@ -54,7 +54,7 @@ def fig3_simulation_heatmap():
     ax.set_title("Exact event-process recovery rate")
     fig.colorbar(im)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_3_recovery_heatmap.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_3_recovery_heatmap.png"), dpi=300)
     plt.close(fig)
 
 
@@ -80,7 +80,7 @@ def fig4_degradation():
         ax.set_xticklabels(kinds, rotation=45, ha="right", fontsize=7)
         ax.legend(fontsize=6)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_7_transmission.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_7_transmission.png"), dpi=300)
     plt.close(fig)
 
 
@@ -93,9 +93,9 @@ def fig5_levels():
     for lv, name in [(None, "a_L0"), (1, "b_L1"), (2, "c_L2")]:
         p = os.path.join(FIG, f"FIGURE_9_{name}.png")
         if lv is None:
-            render_comparator(groups, p, "km", dpi=200)
+            render_comparator(groups, p, "km", dpi=300)
         else:
-            render_survival_comb(groups, p, dpi=200, level=lv)
+            render_survival_comb(groups, p, dpi=300, level=lv)
         paths.append(p)
     # panel with zoomed comb-band inset for L1/L2
     fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.2))
@@ -112,7 +112,7 @@ def fig5_levels():
             ins.axis("off")
             ins.set_title("comb band ×4", fontsize=7)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_9_levels.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_9_levels.png"), dpi=300)
     plt.close(fig)
 
 
@@ -137,7 +137,7 @@ def fig6_timing():
         ax.set_ylabel(t)
         ax.legend(fontsize=7)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_5_timing.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_5_timing.png"), dpi=300)
     plt.close(fig)
 
 
@@ -158,7 +158,7 @@ def fig7_tradeoff():
     ax.set_ylabel("exact event-process recovery")
     ax.set_ylim(-0.05, 1.1)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_8_tradeoff.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_8_tradeoff.png"), dpi=300)
     plt.close(fig)
 
 
@@ -181,7 +181,7 @@ def rev_fig3_capacity():
     ax.set_ylim(-0.05, 1.05)
     ax.legend(title="stratum")
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_3_capacity.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_3_capacity.png"), dpi=300)
     plt.close(fig)
 
 
@@ -202,7 +202,7 @@ def rev_fig6_comparator():
         ax.set_xscale("log"); ax.set_yscale("log")
         ax.set_xlabel("N"); ax.legend(fontsize=7)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_6_comparator.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_6_comparator.png"), dpi=300)
     plt.close(fig)
 
 
@@ -224,7 +224,7 @@ def rev_fig9_reanalysis():
     fig.suptitle("True vs figure-decoded reanalysis (within capacity)",
                  fontsize=10)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_10_reanalysis.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_10_reanalysis.png"), dpi=300)
     plt.close(fig)
 
 
@@ -243,7 +243,7 @@ def rev_fig10_envelope():
     ax.set_ylabel("P(exact)"); ax.set_ylim(-0.05, 1.05)
     ax.legend(fontsize=7)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_4_envelope.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_4_envelope.png"), dpi=300)
     plt.close(fig)
 
 
@@ -265,7 +265,7 @@ def rev_fig2_anatomy():
                       "and packet strip (sub-resolution bursts + header)",
                       fontsize=8)
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, "FIGURE_2_anatomy.png"), dpi=200)
+    fig.savefig(os.path.join(FIG, "FIGURE_2_anatomy.png"), dpi=300)
     plt.close(fig)
 
 
