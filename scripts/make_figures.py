@@ -305,8 +305,10 @@ def rev_fig2_anatomy():
     rng = np.random.default_rng(3)
     groups = simulate(rng, n=300, censor_rate=0.35)
     p = os.path.join(FIG, "_anatomy.png")
-    # single calibration bar lives only in this explanatory figure
-    render_survival_comb(groups, p, dpi=300, calib_count=10)
+    # single geometric calibration glyph lives only in this figure
+    from comb import CALIB_W_REF_MM
+    render_survival_comb(groups, p, dpi=300,
+                         calib_w_ref_mm=CALIB_W_REF_MM)
     img = plt.imread(p)
     h, w = img.shape[:2]
     dec = decode_survival_comb(p)
@@ -325,12 +327,12 @@ def rev_fig2_anatomy():
                       fontweight="bold")
     ch = crop.shape[0]
     # crop covers fig-mm 86..120; rows zone 90.5..104.5 (centre ~97.5),
-    # strip 105..117, calibration bar at far left (x < 0). All callout
+    # strip 105..117, calibration glyph at far left (x < 0). All callout
     # text sits below the crop; arrows point up into the band so no
     # label ink touches the encoding.
     row_c = (97.5 - 86) / 34          # teeth centre line fraction
     lab_y = 1.30 * ch                 # label baseline below the crop
-    axes[1].annotate("calibration: height = count x pitch",
+    axes[1].annotate("reference width: count = h/(0.1*w_ref)",
                      xy=(0.022 * w, 0.80 * ch), xytext=(0.06 * w, lab_y),
                      fontsize=8, ha="center", annotation_clip=False,
                      arrowprops=dict(arrowstyle="->", lw=0.7,

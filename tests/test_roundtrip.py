@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+import comb                                                                    # noqa: E402
 from comb import (km_event_process, render_survival_comb,      # noqa: E402
                   decode_survival_comb, decode_survival_comb_svg,
                   decode_level1, to_pseudo_ipd, MAX_COUNT)
@@ -190,16 +191,18 @@ def _eq(a, b):
 
 
 def test_calibration_marker_ignored(tmp_path):
-    """The Figure-2 calibration bar must not alter decoding (regression
-    per revision prompt s.17-18): identical event process with and
-    without the marker, raster at 150/300/600 dpi and vector SVG."""
+    """The Figure-2 calibration glyph must not alter decoding
+    (regression per revision prompt s.22): identical event process
+    with and without the marker, raster at 150/300/600 dpi and
+    vector SVG."""
     rng = np.random.default_rng(21)
     groups = simulate(rng, n=80, censor_rate=0.3)
     for dpi in (150, 300, 600):
         p0 = tmp_path / f"no_cal_{dpi}.png"
         p1 = tmp_path / f"cal_{dpi}.png"
         render_survival_comb(groups, str(p0), dpi=dpi)
-        render_survival_comb(groups, str(p1), dpi=dpi, calib_count=10)
+        render_survival_comb(groups, str(p1), dpi=dpi,
+                             calib_w_ref_mm=comb.CALIB_W_REF_MM)
         r0 = decode_survival_comb(str(p0), n_groups=1)
         r1 = decode_survival_comb(str(p1), n_groups=1)
         assert r0.status == r1.status
@@ -209,9 +212,59 @@ def test_calibration_marker_ignored(tmp_path):
     s0 = tmp_path / "no_cal.svg"
     s1 = tmp_path / "cal.svg"
     render_survival_comb(groups, str(s0), dpi=300)
-    render_survival_comb(groups, str(s1), dpi=300, calib_count=10)
+    render_survival_comb(groups, str(s1), dpi=300,
+                         calib_w_ref_mm=comb.CALIB_W_REF_MM)
     v0 = decode_survival_comb_svg(str(s0))
     v1 = decode_survival_comb_svg(str(s1))
     assert v0.status == v1.status
     for a, b in zip(v0.groups, v1.groups):
         assert _eq(a, b)
+
+
+def test_calibration_glyph_scale_invariant(tmp_path):
+    """The L-glyph's vertical-to-horizontal ratio h/w_ref must stay
+    stable under uniform rescaling (prompt s.25). Both arms equal
+    CALIB_W_REF_MM, so the ratio is nominally 1; measured from the
+    rendered 0.65-gray pixels in the x<0 margin at 150/300/600 dpi."""
+    from PIL import Image
+    rng = np.random.default_rng(22)
+    groups = simulate(rng, n=80, censor_rate=0.3)
+    ratios = []
+    for dpi in (150, 300, 600):
+        p = tmp_path / f"glyph_{dpi}.png"
+        render_survival_comb(groups, str(p), dpi=dpi,
+                             calib_w_ref_mm=comb.CALIB_W_REF_MM)
+        g = np.asarray(Image.open(p).convert("L"), dtype=float) / 255.0
+        ink, _ = comb._binarize(str(p))
+        ci = ink.sum(axis=0)
+        vl = np.flatnonzero(ci > 0.25 * ink.shape[0])
+        x0 = int(vl[0])                     # x = 0 divider column
+        # glyph lives in the left margin: mid-gray pixels left of the
+        # divider, inside the band's vertical span
+        ri = ink.sum(axis=1)
+        # locate the frame spines: band occupies fig-mm 90.5..117 below
+        # the 10 mm top margin; glyph sits in the bottom 6 mm of it.
+        hl = np.flatnonzero(ri > 0.5 * ink.shape[1])
+        yt = int(hl[0])
+        yb = int(hl[np.argmin(np.abs(
+            hl - yt - (70.5 / comb.FIG_H_MM) * ink.shape[0]))])
+        ppy = (yb - yt) / 70.5
+        ppmm = (int(vl[-1]) - x0) / (comb.COMB_X1_MM - comb.COMB_X0_MM)
+        band_bot = yt + (comb.COMB_BAND_BOT_MM - comb.MAIN_TOP_MM) * ppy
+        # glyph is the only mid-gray ink in the margin that is not a
+        # full-width lane guide: drop rows whose gray spans >80% of the
+        # margin (guides), keep the L (bar + short arm).
+        mask = (g > 0.60) & (g < 0.90)
+        bot = np.arange(int(band_bot - 6 * ppmm), int(band_bot) + 4)
+        region = mask[np.ix_(bot, np.arange(0, x0))].copy()
+        # horizontal arm: widest gray run on the baseline rows
+        arm_rows = mask[int(band_bot) - 1:int(band_bot) + 4, :x0]
+        runs = comb._clusters(arm_rows.any(axis=0))
+        w_arm = max(r[1] - r[0] + 1 for r in runs)
+        # vertical arm: gray extent of the bar column (lane guides
+        # crossing it add only a few px at any dpi)
+        arm_col = int(np.argmax(region.sum(axis=0)))
+        h_bar = int(region[:, arm_col].sum())
+        ratios.append(h_bar / w_arm)
+    for r in ratios:
+        assert abs(r - 1.0) < 0.2, ratios

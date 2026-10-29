@@ -179,10 +179,14 @@ def _encode_tmax(t_max: float):
     return _enc_digits(sig, 4), e
 
 
+CALIB_W_REF_MM = 4.5          # = 10 * PITCH_MM; alpha = 0.1
+CALIB_ALPHA = 0.1             # count = h / (CALIB_ALPHA * w_ref)
+
+
 def render_survival_comb(groups: list[EventProcess], path: str,
                          dpi: int = 150, title: str | None = None,
                          show_axis_labels: bool = True, level: int = 2,
-                         calib_count: int | None = None):
+                         calib_w_ref_mm: float | None = None):
     """Render the Survival Comb figure to `path` (raster or .svg).
 
     level 0: conventional KM (comparator; no comb band)
@@ -532,23 +536,25 @@ def render_survival_comb(groups: list[EventProcess], path: str,
     for lt in STRIP_LANE_TOPS:
         ax_comb.axhline(lt, color="0.75", lw=0.3, zorder=1)
 
-    # ---- optional calibration bar (Figure 2 / anatomy only) ----------
-    # One reference bar far left of x = 0, standing on the comb baseline
-    # (band bottom edge, data-y 0) with its count printed below. Drawn
-    # in 0.65 gray -- the same shade as the axis divider -- so it is a
-    # visible reference yet invisible to both decoders (below the raster
-    # binarize threshold and outside the SVG #000000 bar filter). Its
-    # height uses the encoder's own tooth mapping: count * PITCH_MM.
-    if calib_count is not None and not bare_band:
+    if calib_w_ref_mm is not None and not bare_band:
+        # geometric calibration glyph (Figure 2 only): an L-shaped
+        # reference to the left of x = 0. The horizontal arm defines
+        # the reference width w_ref; the vertical arm is a tooth-width
+        # bar of height w_ref, demonstrating the dimensionless ratio
+        # that maps comb height to count:
+        #     count = h / (CALIB_ALPHA * w_ref)
+        # No numeric label is drawn — the geometry is the
+        # calibration. Rendered at 0.65 gray, below the raster
+        # binarize threshold and outside every decode window and the
+        # SVG #000000 bar filter.
         cx = -hdr_data + 1.5 * step_data   # far left of x = 0, off all lanes
-        ax_comb.plot([cx - 1.0 * step_data, cx + 1.0 * step_data],
-                     [0.0, 0.0], color="0.65", lw=0.8, zorder=2)
+        w_ref_data = calib_w_ref_mm / (COMB_X1_MM - COMB_X0_MM) * t_max
+        ax_comb.plot([cx, cx + w_ref_data], [0.0, 0.0],
+                     color="0.65", lw=0.8, zorder=2)
         ax_comb.add_patch(plt.Rectangle(
-            (cx - 0.5 * step_data, 0.0), step_data,
-            calib_count * PITCH_MM,
+            (cx, 0.0), step_data * TOOTH_W_MM,
+            calib_w_ref_mm,
             facecolor="0.65", edgecolor="none", zorder=3))
-        ax_comb.text(cx, -1.0, f"{calib_count:g}", ha="center", va="top",
-                     fontsize=6, color="0.35", clip_on=False, zorder=4)
 
     if G > 1:
         ax_main.legend(fontsize=7, frameon=False)
