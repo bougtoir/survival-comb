@@ -182,3 +182,36 @@ def test_exact_metrics_bounds():
     # run is exact iff every group is exact
     assert (df.exact_run ==
             (df.exact_groups == df.n_groups).astype(int)).all()
+
+
+def _eq(a, b):
+    return (len(a.times) == len(b.times) and np.array_equal(a.d, b.d)
+            and np.array_equal(a.c, b.c))
+
+
+def test_calibration_marker_ignored(tmp_path):
+    """The Figure-2 calibration bar must not alter decoding (regression
+    per revision prompt s.17-18): identical event process with and
+    without the marker, raster at 150/300/600 dpi and vector SVG."""
+    rng = np.random.default_rng(21)
+    groups = simulate(rng, n=80, censor_rate=0.3)
+    for dpi in (150, 300, 600):
+        p0 = tmp_path / f"no_cal_{dpi}.png"
+        p1 = tmp_path / f"cal_{dpi}.png"
+        render_survival_comb(groups, str(p0), dpi=dpi)
+        render_survival_comb(groups, str(p1), dpi=dpi, calib_count=10)
+        r0 = decode_survival_comb(str(p0), n_groups=1)
+        r1 = decode_survival_comb(str(p1), n_groups=1)
+        assert r0.status == r1.status
+        assert len(r0.groups) == len(r1.groups)
+        for a, b in zip(r0.groups, r1.groups):
+            assert _eq(a, b)
+    s0 = tmp_path / "no_cal.svg"
+    s1 = tmp_path / "cal.svg"
+    render_survival_comb(groups, str(s0), dpi=300)
+    render_survival_comb(groups, str(s1), dpi=300, calib_count=10)
+    v0 = decode_survival_comb_svg(str(s0))
+    v1 = decode_survival_comb_svg(str(s1))
+    assert v0.status == v1.status
+    for a, b in zip(v0.groups, v1.groups):
+        assert _eq(a, b)

@@ -3,9 +3,9 @@
 Encoding spec (canonical geometry, all lengths in mm on a 180 x 120 mm figure):
 
   Main axes : x in [0, t_max] (shared), y in [0, 1.05]  -> conventional KM curve
-  Comb band : same x axis, band below the main axes, one row per group.
-              Each group row is split into an upper half (event teeth) and a
-              lower half (censoring teeth).
+  Comb band : same x axis, band immediately beneath the x-axis, hugging it,
+              one row per group.  Each group row is split into an upper half
+              (event teeth) and a lower half (censoring teeth).
 
   Header    : reserved x<0 margin of the comb band (left of the x=0 divider).
               Contains, per figure:
@@ -67,12 +67,14 @@ FIG_W_MM = 180.0
 FIG_H_MM = 120.0
 COMB_X0_MM = 28.0          # left edge of the x=0 position of comb/main axes
 COMB_X1_MM = 175.0         # right edge (x = t_max)
-COMB_BAND_TOP_MM = 10.0    # measured from top of figure
-COMB_ROWS_BOT_MM = 24.0    # group rows live in TOP..ROWS_BOT
-COMB_STRIP_TOP_MM = 24.5   # overflow packet strip
-COMB_BAND_BOT_MM = 36.5
-MAIN_TOP_MM = 39.5
-MAIN_BOT_MM = 110.0
+MAIN_TOP_MM = 10.0
+MAIN_BOT_MM = 80.5
+# comb band sits below the x-axis line, tick labels and "Time" title:
+# vertical order KM plot -> axis line -> tick labels -> Time -> gap -> comb
+COMB_BAND_TOP_MM = 90.5    # measured from top of figure
+COMB_ROWS_BOT_MM = 104.5   # group rows live in TOP..ROWS_BOT
+COMB_STRIP_TOP_MM = 105.0  # overflow packet strip
+COMB_BAND_BOT_MM = 117.0
 HEADER_MM = 26.0           # reserved header margin left of x=0 (5 + 5G bars, G<=4)
 
 PITCH_MM = 0.45            # height unit of a unary count tooth
@@ -179,7 +181,8 @@ def _encode_tmax(t_max: float):
 
 def render_survival_comb(groups: list[EventProcess], path: str,
                          dpi: int = 150, title: str | None = None,
-                         show_axis_labels: bool = True, level: int = 2):
+                         show_axis_labels: bool = True, level: int = 2,
+                         calib_count: int | None = None):
     """Render the Survival Comb figure to `path` (raster or .svg).
 
     level 0: conventional KM (comparator; no comb band)
@@ -195,9 +198,10 @@ def render_survival_comb(groups: list[EventProcess], path: str,
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    if level == 0:
-        return render_comparator(groups, path, "km", dpi=dpi)
+    # level 0 keeps the comb-path frame/axes so L0/L1/L2 panels have
+    # identical geometry; only the reconstruction layers are absent
     risk_only = (level == 1)
+    bare_band = (level == 0)
 
     t_max = max(float(g.times[-1]) for g in groups)
     G = len(groups)
@@ -221,10 +225,15 @@ def render_survival_comb(groups: list[EventProcess], path: str,
     ax_main.set_ylim(0, 1.05)
     if show_axis_labels:
         ax_main.set_ylabel("Survival probability")
-        ax_main.set_xlabel("Time")
     if title:
         ax_main.set_title(title)
     ax_main.tick_params(labelsize=7)
+    # x tick labels live below the comb band (band hugs the axis); the
+    # axes-level labels are suppressed and re-drawn under the band so no
+    # text ink lands inside the decoded region
+    for tl in ax_main.get_xticklabels():
+        tl.set_visible(False)
+    ax_main.set_xlabel("")
 
     # x<0 header margin in comb axes
     hdr_data = HEADER_MM / (COMB_X1_MM - COMB_X0_MM) * t_max
@@ -257,14 +266,15 @@ def render_survival_comb(groups: list[EventProcess], path: str,
     # strip occupies the lower STRIP_H_MM of the band (data-y 0..STRIP_H)
     yb = (COMB_ROWS_BOT_MM - COMB_BAND_TOP_MM) + 0.5  # bottom of digit bars
     y_hdr = yb + 12.0 * LEVEL_MM
-    for j, dg in enumerate(sig):
-        digit_bar(hx + j * step_data, y_hdr, dg, up=False)
-    digit_bar(hx + 4 * step_data, y_hdr, e + 4, up=False)
-    hx += 5 * step_data
-    for g in groups:
-        for j, dg in enumerate(_enc_digits(g.n0, 4)):
+    if not bare_band:
+        for j, dg in enumerate(sig):
             digit_bar(hx + j * step_data, y_hdr, dg, up=False)
-        hx += 5 * step_data            # 4 digits + gap
+        digit_bar(hx + 4 * step_data, y_hdr, e + 4, up=False)
+        hx += 5 * step_data
+        for g in groups:
+            for j, dg in enumerate(_enc_digits(g.n0, 4)):
+                digit_bar(hx + j * step_data, y_hdr, dg, up=False)
+            hx += 5 * step_data        # 4 digits + gap
 
     # ---- teeth ---------------------------------------------------------
     band_h_mm = COMB_BAND_BOT_MM - COMB_BAND_TOP_MM
@@ -285,6 +295,8 @@ def render_survival_comb(groups: list[EventProcess], path: str,
         prev_packed = False
         for i, t in enumerate(g.times):
             td = max(float(t), t_floor)
+            if bare_band:
+                continue
             if td - last_drawn < eps_data or (prev_packed
                                               and td - prev_x < guard_data):
                 prev_packed = True
@@ -334,7 +346,10 @@ def render_survival_comb(groups: list[EventProcess], path: str,
         s = g.km_survival()
         tt = np.concatenate([[0.0], g.times])
         ss = np.concatenate([[1.0], s])
-        ax_main.step(tt, ss, where="post", lw=1.4,
+        # grayscale-robust series: shade + linestyle, never colour alone
+        gs_col = ["k", "0.45", "0.65", "0.3"][gi % 4]
+        gs_ls = ["-", "--", "-.", ":"][gi % 4]
+        ax_main.step(tt, ss, where="post", lw=1.4, color=gs_col, ls=gs_ls,
                      label=g.label or f"group {gi + 1}")
     # ---- overflow packet strip --------------------------------------
     axis_mm = COMB_X1_MM - COMB_X0_MM
@@ -517,8 +532,38 @@ def render_survival_comb(groups: list[EventProcess], path: str,
     for lt in STRIP_LANE_TOPS:
         ax_comb.axhline(lt, color="0.75", lw=0.3, zorder=1)
 
+    # ---- optional calibration bar (Figure 2 / anatomy only) ----------
+    # One reference bar far left of x = 0, standing on the comb baseline
+    # (band bottom edge, data-y 0) with its count printed below. Drawn
+    # in 0.65 gray -- the same shade as the axis divider -- so it is a
+    # visible reference yet invisible to both decoders (below the raster
+    # binarize threshold and outside the SVG #000000 bar filter). Its
+    # height uses the encoder's own tooth mapping: count * PITCH_MM.
+    if calib_count is not None and not bare_band:
+        cx = -hdr_data + 1.5 * step_data   # far left of x = 0, off all lanes
+        ax_comb.plot([cx - 1.0 * step_data, cx + 1.0 * step_data],
+                     [0.0, 0.0], color="0.65", lw=0.8, zorder=2)
+        ax_comb.add_patch(plt.Rectangle(
+            (cx - 0.5 * step_data, 0.0), step_data,
+            calib_count * PITCH_MM,
+            facecolor="0.65", edgecolor="none", zorder=3))
+        ax_comb.text(cx, -1.0, f"{calib_count:g}", ha="center", va="top",
+                     fontsize=6, color="0.35", clip_on=False, zorder=4)
+
     if G > 1:
         ax_main.legend(fontsize=7, frameon=False)
+
+    # x tick labels + axis title between the KM axes and the comb band
+    # (outside decoded geometry); order: axis -> ticks -> Time -> comb
+    for tv in ax_main.get_xticks():
+        if 0 <= tv <= t_max:
+            fig.text(COMB_X0_MM / FIG_W_MM
+                     + tv / t_max * (COMB_X1_MM - COMB_X0_MM) / FIG_W_MM,
+                     1 - (MAIN_BOT_MM + 1.8) / FIG_H_MM,
+                     f"{tv:g}", ha="center", va="top", fontsize=7)
+    fig.text((COMB_X0_MM + COMB_X1_MM) / 2 / FIG_W_MM,
+             1 - (MAIN_BOT_MM + 5.5) / FIG_H_MM,
+             "Time", ha="center", va="top", fontsize=8)
 
     fig.savefig(path, dpi=dpi)
     plt.close(fig)
@@ -559,7 +604,9 @@ def _km_axes(groups, path, dpi, censor_marks=False, risk_table=False):
         s = g.km_survival()
         tt = np.concatenate([[0.0], g.times])
         ss = np.concatenate([[1.0], s])
-        line, = ax.step(tt, ss, where="post", lw=1.4,
+        gs_col = ["k", "0.45", "0.65", "0.3"][gi % 4]
+        gs_ls = ["-", "--", "-.", ":"][gi % 4]
+        line, = ax.step(tt, ss, where="post", lw=1.4, color=gs_col, ls=gs_ls,
                         label=g.label or f"group {gi + 1}")
         if censor_marks:
             ct = g.times[g.c > 0]
@@ -693,15 +740,23 @@ def decode_survival_comb(img_path, n_groups: int = 1) -> DecodeResult:
     # merge into spurious long lines above it, so verify the pairing.
     main_h = (MAIN_BOT_MM - MAIN_TOP_MM) / FIG_H_MM
     y_main_top = int(hlines[0])
+    y_main_bot = 0
     for i in range(len(hlines)):
         later = hlines[hlines > hlines[i]]
-        if len(later) and np.any(np.abs(later - hlines[i] - main_h * H)
-                                 < 0.04 * H):
+        pair = np.abs(later - hlines[i] - main_h * H) < 0.04 * H
+        if len(later) and np.any(pair):
             y_main_top = int(hlines[i])
+            y_main_bot = int(later[np.flatnonzero(pair)[0]])
             break
     x0 = int(vlines[0]); x1 = int(vlines[-1])
     ppmm = (x1 - x0) / (COMB_X1_MM - COMB_X0_MM)          # px per mm (x)
-    ppmm_y = y_main_top / MAIN_TOP_MM                    # px per mm (y)
+    # calibrate y from BOTH main-axes spines: anchoring on the top spine
+    # alone lets a ~1 px detection offset grow into ~1 mm of band drift at
+    # the strip, 100 mm below; two-point calibration is stable there
+    if y_main_bot > y_main_top:
+        ppmm_y = (y_main_bot - y_main_top) / (MAIN_BOT_MM - MAIN_TOP_MM)
+    else:
+        ppmm_y = y_main_top / MAIN_TOP_MM                # px per mm (y)
     if ppmm <= 0 or ppmm_y <= 0:
         res.warnings.append("bad calibration")
         return res.finalize()
@@ -754,48 +809,83 @@ def decode_survival_comb(img_path, n_groups: int = 1) -> DecodeResult:
     xm = 0                            # slice starts at x0 absolute
     for gi, (ra, rb) in enumerate(row_ranges):
         centre = (ra + rb) / 2.0
-        up = ink2[band_top + ra: band_top + int(centre), x0:x1 + 1]
-        dn = ink2[band_top + int(centre): band_top + rb + 1, x0:x1 + 1]
-        d_map, c_map = {}, {}
-        for half, store in ((up, d_map), (dn, c_map)):
-            cols = half.sum(axis=0)
-            cl = _clusters(cols > 0)
-            tooth_w = TOOTH_W_MM * ppmm
-            i = 0
-            while i < len(cl):
-                a, b = cl[i]
-                width = b - a + 1
-                if width > 1.45 * tooth_w:
-                    res.collisions += 1
-                colrun = half[:, a:b + 1].any(axis=1)
-                ys = np.flatnonzero(colrun)
-                h_mm = (ys.max() - ys.min() + 1) / ppmm_y
-                if h_mm < 0.6 * PITCH_MM:
-                    i += 1
-                    continue                    # guide-line residue, not a tooth
-                if h_mm > 0.85 * (half_px / ppmm_y):
+        c_abs = band_top + centre
+        # tooth bases are anchored on the row-centre guide line. Measure
+        # the baseline directly: the centre guide is drawn at 0.75 gray,
+        # below the dark-ink binarize threshold, so it survives as a
+        # detectable horizontal line across the row. d_i teeth extend
+        # above it, c_i teeth below; ink above/below B gives each side's
+        # height. Raster straddle of ~2 px is absorbed by excluding the
+        # baseline row itself and requiring >= 0.5*PITCH_MM of ink.
+        from PIL import Image
+        g = np.asarray(Image.open(img_path).convert("L"), dtype=float) / 255.0
+        gx0, gx1 = x0, x1 + 1
+        guide = (g > 0.68) & (g < 0.85)
+        gy = np.arange(ra, rb + 1)
+        gscore = guide[band_top + ra: band_top + rb + 1, gx0:gx1].sum(axis=1)
+        cand = gy[gscore > 0.4 * (gx1 - gx0)]
+        if len(cand):
+            gcl = _clusters(np.abs(cand - centre) <= 2.5)
+            gcl = [cc for cc in gcl if cc[0] < len(cand)]
+            if gcl:
+                cc = gcl[0]
+                B = float(cand[cc[0]:cc[1] + 1].max())
+            else:
+                B = float(centre)
+        else:
+            B = float(centre)
+        half_mm = band_h_mm / n_groups / 2.0
+        row_ink = ink2[band_top + ra: band_top + rb + 1, x0:x1 + 1]
+        d_map = {}
+        c_map = {}
+        cl = _clusters(row_ink.sum(axis=0) > 0)
+        tooth_w = TOOTH_W_MM * ppmm
+        floor_mm = 0.5 * PITCH_MM
+        i = 0
+        while i < len(cl):
+            a, b = cl[i]
+            width = b - a + 1
+            if width > 1.45 * tooth_w:
+                res.collisions += 1
+            colrun = row_ink[:, a:b + 1].any(axis=1)
+            runs = _clusters(colrun)
+            run = min(runs, key=lambda rc: min(
+                abs(rc[0] - B), abs(rc[1] - B)))
+            Brel = int(round(B)) - ra
+            u_px = int(np.clip(Brel - run[0], 0, None))
+            d_px = int(np.clip(run[1] - Brel, 0, None))
+            hu = u_px / ppmm_y
+            hd = d_px / ppmm_y
+            t = (xm + (a + b) / 2.0) / (x1 - x0) * t_max
+            if t < t_floor_dec:
+                i += 1
+                continue          # encoder nudges t~0 teeth right
+            sides = []
+            if hu >= floor_mm:
+                sides.append((hu, d_map))
+            if hd >= floor_mm:
+                sides.append((hd, c_map))
+            for side_h, store in sides:
+                if side_h > 0.85 * half_mm:
                     # sentinel: next DIGIT_K clusters are digit bars
                     digs = []
                     for k in range(1, DIGIT_K + 1):
                         if i + k < len(cl):
                             a2, b2 = cl[i + k]
-                            cr = half[:, a2:b2 + 1].any(axis=1)
-                            y2 = np.flatnonzero(cr)
-                            hh = (y2.max() - y2.min() + 1) / ppmm_y
+                            cr = row_ink[:, a2:b2 + 1].any(axis=1)
+                            r2 = min(_clusters(cr), key=lambda rc: min(
+                                abs(rc[0] - Brel), abs(rc[1] - Brel)))
+                            hh = (r2[1] - r2[0] + 1) / ppmm_y
                             digs.append(int(round(hh / LEVEL_MM - 0.5)))
                     val = 0
                     for dg in digs:
                         val = val * 10 + max(0, min(9, dg))
                     i += DIGIT_K
                 else:
-                    val = max(1, int(round(h_mm / PITCH_MM)))
-                t = (xm + (a + b) / 2.0) / (x1 - x0) * t_max
-                if t < t_floor_dec:
-                    i += 1
-                    continue          # encoder nudges t~0 teeth right
+                    val = max(1, int(round(side_h / PITCH_MM)))
                 store.setdefault(round(t, 6), 0)
                 store[round(t, 6)] += val
-                i += 1
+            i += 1
         all_t = sorted(set(d_map) | set(c_map))
         row_slots[gi] = {t: (d_map.get(t, 0), c_map.get(t, 0))
                         for t in all_t}
@@ -818,8 +908,11 @@ def decode_survival_comb(img_path, n_groups: int = 1) -> DecodeResult:
         # exclusive window: bars hang <= (9.5 * STRIP_LEVEL_MM) from the
         # lane top; keep the row inside the lane pitch so the next lane's
         # bars never bleed in
+        # the window reaches to just above the next lane top: enough room
+        # for a full-height bar (2.0 mm below a lane top rendered with a
+        # ~0.2 mm rasterization offset), without admitting next-lane ink
         bot_mm = (COMB_STRIP_TOP_MM + 0.3 + k * STRIP_LANE_PITCH_MM
-                  + STRIP_LANE_PITCH_MM - 0.12)
+                  + STRIP_LANE_PITCH_MM - 0.02)
         r0 = y_main_top - int(round((MAIN_TOP_MM - top_mm) * ppmm_y))
         r1 = y_main_top - int(round((MAIN_TOP_MM - bot_mm) * ppmm_y))
         # lanes 1+ start in the left header margin (see encoder lane_start)
@@ -830,13 +923,25 @@ def decode_survival_comb(img_path, n_groups: int = 1) -> DecodeResult:
         dark = ink_dark[r0:r1, xs:x1 + 1]
         scl = _clusters(strip.sum(axis=0) > 0)
         for a, b in scl:
-            ys = np.flatnonzero(strip[:, a:b + 1].any(axis=1))
-            if len(ys) == 0:
+            row_mask = strip[:, a:b + 1].any(axis=1)
+            if not row_mask.any():
                 continue
-            # grayscale ink area per column unit -> sub-pixel height,
-            # robust to anti-aliased top/bottom edges
-            hh = float(dark[:, a:b + 1].sum()) / (b - a + 1) / ppmm_y
-            if hh < 0.5 * STRIP_LEVEL_MM:
+            # the bar is the first contiguous ink run hanging from the lane
+            # top; a rasterization offset at the lane top must not truncate
+            # tall bars at the window bottom, so measure the run itself
+            runs = _clusters(row_mask)
+            # keep the run whose top is nearest the lane top; a run whose
+            # top sits deeper than ~0.6 mm is the next lane's bar bleeding
+            # into the bottom margin of this window, not a bar of this lane
+            top_i = min(runs, key=lambda rc: rc[0])
+            if top_i[0] / ppmm_y > 1.4:
+                continue
+            ink_run = strip[top_i[0]:top_i[1] + 1, a:b + 1]
+            dark_run = dark[top_i[0]:top_i[1] + 1, a:b + 1]
+            hh = float(dark_run.sum()) / (b - a + 1) / ppmm_y
+            # slivers of the previous lane's tall bars can bleed ~0.1 mm
+            # into the top of this window; a real bar is >= 0.2 mm tall
+            if hh < 0.8 * STRIP_LEVEL_MM:
                 continue
             bars.append(int(round(hh / STRIP_LEVEL_MM - 1.0)))
     pk_by_group = {gi: [] for gi in range(n_groups)}
